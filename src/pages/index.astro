@@ -1,45 +1,45 @@
 ---
-import BaseHead from '../components/BaseHead.astro';
-import Header from '../components/Header.astro';
-import Footer from '../components/Footer.astro';
-import { SITE_TITLE, SITE_DESCRIPTION } from '../consts';
-import { getCollection } from 'astro:content';
+import BaseHead from "../components/BaseHead.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import { SITE_TITLE, SITE_DESCRIPTION } from "../consts";
+import { getCollection } from "astro:content";
 
 // Load all posts from your "posts" collection
-const posts = await getCollection('blog');
+const posts = await getCollection("blog");
 
 // Sort posts by publication date (newest first)
-const recentPosts = posts
-	.slice(0, 5); // adjust number of posts as needed
+const recentPosts = posts.filter((post) => !post.data.draft).slice(0, 5); // adjust number of posts as needed
 ---
 
 <!doctype html>
 <html lang="en">
-	<head>
-		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
-	</head>
-	<body>
-		<Header />
-		<main>
-			<h1>Hi, I'm Bryce 🚀</h1>
-			<p>
-				I'm a software engineer writing about generative ai, keyboards and flutter.
-			</p>
+  <head>
+    <BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
+  </head>
+  <body>
+    <Header />
+    <main>
+      <h1>Hi, I'm Bryce 👋</h1>
+      <p>
+        I'm a software engineer writing about generative ai, keyboards and
+        flutter.
+      </p>
 
-			<section>
-				<h2>Recent Posts</h2>
-				<ul>
-					{recentPosts.map((post) => (
-						<li>
-							<a href={`/blog/${post.id}`}>
-								{post.data.title}
-							</a>
-							<span>{new Date(post.data.pubDate).toLocaleDateString()}</span>
-						</li>
-					))}
-				</ul>
-			</section>
-		</main>
-		<Footer />
-	</body>
+      <section>
+        <h2>Recent Posts</h2>
+        <ul>
+          {
+            recentPosts.map((post) => (
+              <li>
+                <a href={`/blog/${post.id}`}>{post.data.title}</a>
+                <span>{new Date(post.data.pubDate).toLocaleDateString()}</span>
+              </li>
+            ))
+          }
+        </ul>
+      </section>
+    </main>
+    <Footer />
+  </body>
 </html>
