@@ -5,13 +5,13 @@ pubDate: "Feb 16 2025"
 heroImage: "/anyOfHero.png"
 ---
 
-# What is Function Calling?
+## What is Function Calling?
 
 OpenAI has admitted that they struggled with naming resources and made one of their goals in 2025 to improve their naming scheme for future model releases. However, I think their naming woes were not just limited to their groundbreaking new models but also some of those models’ features, most notably function calling (later renamed to tool use). Function calling is an incredibly powerful tool that is often overlooked, mainly due to challenging branding when it was launched. It allows the model to bind its output to a JSON schema, effectively creating an interface between an external resource and an LLM. This generated JSON doesn’t have to be used just to call functions—it can do a number of things, including invoking APIs to retrieve external data or triggering stop sequences in agentic loops.
 
 All major models support function calling, including all of OpenAI’s offerings, Claude 3.5, Google’s Gemini, and later versions of Mistral’s products. While they all use a similar syntax pioneered by OpenAI using JSON Schema, support for individual features can vary as each model supports a subsection of the JSON Schema specification. However the feature I wanted to talk about today is my favorite and least documented-- `anyOf`.
 
-# Schema Combinatorics
+## Schema Combinatorics
 
 Let's take a look at the classic example of a tool spec, a tool used to get the weather for a given location defined as a string.
 
@@ -100,6 +100,6 @@ The JSON Schema specification addresses this issue of combining schemas with fou
 
 > Notice that we don’t have to specify rules inside the description, instead, we enforce that context in the schema itself.
 
-# Takeaways
+## Takeaways
 
 Incorporating `anyOf` into your tool specifications not only streamlines your design process but also significantly enhances the flexibility and robustness of your interfaces. By leveraging this feature, you can elegantly handle multiple input types without resorting to clumsy workarounds, making your APIs both more intuitive and easier to maintain. As the ecosystem of function calling and tool use continues to grow, embracing advanced JSON Schema features like anyOf can help ensure that your implementations remain future-proof and adaptable to a variety of use cases. I encourage you to experiment with anyOf and explore its full potential in your next project—it’s a powerful step toward creating more expressive and resilient tool specifications.
