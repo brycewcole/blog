@@ -3,6 +3,14 @@ import BaseHead from '../components/BaseHead.astro';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import { SITE_TITLE, SITE_DESCRIPTION } from '../consts';
+import { getCollection } from 'astro:content';
+
+// Load all posts from your "posts" collection
+const posts = await getCollection('blog');
+
+// Sort posts by publication date (newest first)
+const recentPosts = posts
+	.slice(0, 5); // adjust number of posts as needed
 ---
 
 <!doctype html>
@@ -17,6 +25,20 @@ import { SITE_TITLE, SITE_DESCRIPTION } from '../consts';
 			<p>
 				I'm a software engineer writing about generative ai, keyboards and flutter.
 			</p>
+
+			<section>
+				<h2>Recent Posts</h2>
+				<ul>
+					{recentPosts.map((post) => (
+						<li>
+							<a href={`/blog/${post.id}`}>
+								{post.data.title}
+							</a>
+							<span>{new Date(post.data.pubDate).toLocaleDateString()}</span>
+						</li>
+					))}
+				</ul>
+			</section>
 		</main>
 		<Footer />
 	</body>
