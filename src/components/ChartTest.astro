@@ -45,7 +45,8 @@
     day: "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun";
     hour: number;
     name: string;
-    miles: number;
+    meters: number;
+    average_speed: number;
   }
 
   // Dimensions
@@ -54,11 +55,16 @@
   const margin = { top: 60, right: 30, bottom: 50, left: 80 };
 
   // Data type selector container
-  const dataTypes: { id: "time" | "miles"; label: string; icon: string }[] = [
+  const dataTypes: {
+    id: "time" | "miles" | "pace";
+    label: string;
+    icon: string;
+  }[] = [
     { id: "time", label: "Start Time", icon: "🕒" },
-    { id: "miles", label: "Miles Ran", icon: "👟" },
+    { id: "miles", label: "Total Miles", icon: "👟" },
+    { id: "pace", label: "Avg Speed (min/mile)", icon: "⏱️" },
   ];
-  let currentDataType: "time" | "miles" = "time";
+  let currentDataType: "time" | "miles" | "pace" = "time";
 
   // Create the data type selector UI
   const selectorContainer = d3
@@ -93,7 +99,7 @@
   });
 
   // Function to handle data type changes
-  function updateChartType(newType: "time" | "miles") {
+  function updateChartType(newType: "time" | "miles" | "pace") {
     if (newType === currentDataType) return;
 
     // Animate the buttons
@@ -145,6 +151,15 @@
     renderChart();
   }
 
+  function kmhToMinPerMile(kmh: number): string {
+    if (!kmh || kmh === 0) return "-";
+    // Correct conversion: min/mile = 60 / (kmh / 1.60934)
+    const minPerMile = 60 / (kmh / 1.60934);
+    const min = Math.floor(minPerMile);
+    const sec = Math.round((minPerMile - min) * 60);
+    return `${min}:${sec.toString().padStart(2, "0")}`;
+  }
+
   // Function to render the chart based on current data type
   function renderChart() {
     // Clear existing chart elements
@@ -159,38 +174,58 @@
       processedData = bins;
       colorScaleDomain = [0, (d3.max(bins, (d) => d.count) || 0) * 1.1];
       chartTitle = "Running Activity Heatmap by Time";
-    } else {
-      // For miles, we need to calculate average miles per day/hour
+    } else if (currentDataType === "miles") {
       processedData = bins.map((bin) => {
-        const totalMiles = bin.records.reduce(
-          (sum, rec) => sum + (rec.miles || 0),
+        const totalMeters = bin.records.reduce(
+          (sum, rec) => sum + (rec.meters || 0),
           0
         );
-        const avgMiles =
-          bin.records.length > 0 ? totalMiles / bin.records.length : 0;
-        return { ...bin, value: avgMiles };
+        const totalMiles = totalMeters / 1609.34;
+        return { ...bin, value: totalMiles };
       });
       colorScaleDomain = [
         0,
         (d3.max(processedData, (d) => d.value) || 0) * 1.1,
       ];
-      chartTitle = "Average Miles per Run Heatmap";
+      chartTitle = "Total Miles per Hour Heatmap";
+    } else if (currentDataType === "pace") {
+      processedData = bins.map((bin) => {
+        const valid = bin.records.filter(
+          (rec) => rec.average_speed && rec.average_speed > 0
+        );
+        // Convert from m/s to km/h (1 m/s = 3.6 km/h)
+        const avgKmh = valid.length
+          ? valid.reduce((sum, rec) => sum + rec.average_speed * 3.6, 0) /
+            valid.length
+          : 0;
+        // Correct conversion: min/mile = 60 / (kmh / 1.60934)
+        const minPerMile = avgKmh > 0 ? 60 / (avgKmh / 1.60934) : 0;
+        return { ...bin, value: minPerMile, avgKmh };
+      });
+      const minPace = d3.min(processedData, (d) => d.value) || 0;
+      const maxPace = d3.max(processedData, (d) => d.value) || 10;
+      colorScaleDomain = [maxPace, minPace];
+      chartTitle = "Average Speed (min/mile) per Day";
     }
 
     // Update color scale domain
     const colorScale = d3
       .scaleSequential(d3.interpolateYlOrRd)
-      .domain(colorScaleDomain);
+      .domain(colorScaleDomain ?? [0, 1]);
 
     // Update title with animation
-    svg.select("text").transition().duration(500).text(chartTitle);
+    svg
+      .select("text")
+      .transition()
+      .duration(500)
+      .text(chartTitle as string);
 
     // Draw cells with animation
     const cells = svg
       .append("g")
       .attr("class", "heatmap-cells")
       .selectAll("rect.cell")
-      .data(processedData)
+      .data(processedData ?? [])
       .enter()
       .append("rect")
       .attr("class", "cell")
@@ -229,7 +264,6 @@
           transformOrigin: "50% 50%",
         });
 
-        // Customize tooltip based on data type
         let tooltipContent;
         if (currentDataType === "time") {
           const sample =
@@ -239,21 +273,26 @@
           ${d.day} @ ${d.hour}:00<br/>
           Example: ${sample.name}
         `;
-        } else {
-          const totalMiles = d.records.reduce(
-            (sum, rec) => sum + (rec.miles || 0),
+        } else if (currentDataType === "miles") {
+          const totalMeters = d.records.reduce(
+            (sum, rec) => sum + (rec.meters || 0),
             0
           );
-          const avgMiles =
-            d.records.length > 0 ? totalMiles / d.records.length : 0;
+          const totalMiles = totalMeters / 1609.34;
           tooltipContent = `
-          <strong>${avgMiles.toFixed(2)} avg miles</strong><br/>
+          <strong>${totalMiles.toFixed(2)} total miles</strong><br/>
+          ${d.day} @ ${d.hour}:00<br/>
+          ${d.count} runs total
+        `;
+        } else if (currentDataType === "pace") {
+          tooltipContent = `
+          <strong>${kmhToMinPerMile(d.avgKmh!)} min/mile avg</strong><br/>
           ${d.day} @ ${d.hour}:00<br/>
           ${d.count} runs total
         `;
         }
 
-        tooltip.html(tooltipContent);
+        tooltip.html(tooltipContent ?? "");
 
         const tooltipNode = tooltip.node();
         if (!tooltipNode) return;
@@ -299,6 +338,7 @@
         });
       });
   }
+
   const days: ActivityData["day"][] = [
     "Mon",
     "Tue",
@@ -351,6 +391,7 @@
     count: number;
     records: ActivityData[];
     value?: number;
+    avgKmh?: number;
   };
   const bins: Bin[] = [];
   for (const [day, hourMap] of nested) {
@@ -465,14 +506,34 @@
       });
 
       // Tooltip Logic
-      const sample = d.records[Math.floor(Math.random() * d.records.length)];
-      tooltip.html(
-        `
+      let tooltipContent;
+      if (currentDataType === "time") {
+        const sample = d.records[Math.floor(Math.random() * d.records.length)];
+        tooltipContent = `
           <strong>${d.count} runs</strong><br/>
           ${d.day} @ ${d.hour}:00<br/>
           Example: ${sample.name}
-        `
-      );
+        `;
+      } else if (currentDataType === "miles") {
+        const totalMeters = d.records.reduce(
+          (sum, rec) => sum + (rec.meters || 0),
+          0
+        );
+        const totalMiles = totalMeters / 1609.34;
+        tooltipContent = `
+          <strong>${totalMiles.toFixed(2)} total miles</strong><br/>
+          ${d.day} @ ${d.hour}:00<br/>
+          ${d.count} runs total
+        `;
+      } else if (currentDataType === "pace") {
+        tooltipContent = `
+          <strong>${kmhToMinPerMile(d.avgKmh!)} min/mile avg</strong><br/>
+          ${d.day} @ ${d.hour}:00<br/>
+          ${d.count} runs total
+        `;
+      }
+
+      tooltip.html(tooltipContent ?? "");
       const tooltipNode = tooltip.node() as HTMLElement;
       const ttWidth = tooltipNode.offsetWidth;
       const ttHeight = tooltipNode.offsetHeight;
