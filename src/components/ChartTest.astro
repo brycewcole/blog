@@ -45,12 +45,260 @@
     day: "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun";
     hour: number;
     name: string;
+    miles: number;
   }
 
   // Dimensions
   const width = 720;
   const height = 400;
   const margin = { top: 60, right: 30, bottom: 50, left: 80 };
+
+  // Data type selector container
+  const dataTypes: { id: "time" | "miles"; label: string; icon: string }[] = [
+    { id: "time", label: "Start Time", icon: "🕒" },
+    { id: "miles", label: "Miles Ran", icon: "👟" },
+  ];
+  let currentDataType: "time" | "miles" = "time";
+
+  // Create the data type selector UI
+  const selectorContainer = d3
+    .select("#d3-chart")
+    .append("div")
+    .style("display", "flex")
+    .style("justify-content", "center")
+    .style("margin-bottom", "20px")
+    .style("gap", "15px");
+
+  dataTypes.forEach((type) => {
+    selectorContainer
+      .append("button")
+      .attr("id", `btn-${type.id}`)
+      .attr(
+        "class",
+        `data-selector ${type.id === currentDataType ? "active" : ""}`
+      )
+      .html(`${type.icon} ${type.label}`)
+      .style("background", type.id === currentDataType ? "#ff7b25" : "#f0f0f0")
+      .style("color", type.id === currentDataType ? "white" : "#333")
+      .style("border", "none")
+      .style("border-radius", "20px")
+      .style("padding", "10px 20px")
+      .style("font-size", "16px")
+      .style("font-weight", "bold")
+      .style("cursor", "pointer")
+      .style("position", "relative")
+      .style("overflow", "hidden")
+      .style("z-index", "1")
+      .on("click", () => updateChartType(type.id));
+  });
+
+  // Function to handle data type changes
+  function updateChartType(newType: "time" | "miles") {
+    if (newType === currentDataType) return;
+
+    // Animate the buttons
+    gsap.to(`#btn-${currentDataType}`, {
+      backgroundColor: "#f0f0f0",
+      color: "#333",
+      duration: 0.3,
+      ease: "power1.out",
+    });
+
+    gsap.to(`#btn-${newType}`, {
+      backgroundColor: "#ff7b25",
+      color: "white",
+      duration: 0.3,
+      ease: "power1.in",
+    });
+
+    // Create ripple effect on the clicked button
+    const btn = document.querySelector(`#btn-${newType}`);
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    const circle = document.createElement("div");
+    const diameter = Math.max(rect.width, rect.height);
+
+    circle.style.width = circle.style.height = `${diameter}px`;
+    circle.style.position = "absolute";
+    circle.style.borderRadius = "50%";
+    circle.style.backgroundColor = "rgba(255, 255, 255, 0.5)";
+    circle.style.left = "0";
+    circle.style.top = "0";
+    circle.style.transform = "translate(-50%, -50%)";
+    circle.style.pointerEvents = "none";
+    btn.appendChild(circle);
+
+    gsap.fromTo(
+      circle,
+      { left: "50%", top: "50%", scale: 0, opacity: 1 },
+      {
+        scale: 2,
+        opacity: 0,
+        duration: 0.6,
+        onComplete: () => {
+          circle.remove();
+        },
+      }
+    );
+
+    currentDataType = newType;
+    renderChart();
+  }
+
+  // Function to render the chart based on current data type
+  function renderChart() {
+    // Clear existing chart elements
+    svg.selectAll(".heatmap-cells").remove();
+
+    // Process data based on current type
+    let processedData;
+    let colorScaleDomain;
+    let chartTitle;
+
+    if (currentDataType === "time") {
+      processedData = bins;
+      colorScaleDomain = [0, (d3.max(bins, (d) => d.count) || 0) * 1.1];
+      chartTitle = "Running Activity Heatmap by Time";
+    } else {
+      // For miles, we need to calculate average miles per day/hour
+      processedData = bins.map((bin) => {
+        const totalMiles = bin.records.reduce(
+          (sum, rec) => sum + (rec.miles || 0),
+          0
+        );
+        const avgMiles =
+          bin.records.length > 0 ? totalMiles / bin.records.length : 0;
+        return { ...bin, value: avgMiles };
+      });
+      colorScaleDomain = [
+        0,
+        (d3.max(processedData, (d) => d.value) || 0) * 1.1,
+      ];
+      chartTitle = "Average Miles per Run Heatmap";
+    }
+
+    // Update color scale domain
+    const colorScale = d3
+      .scaleSequential(d3.interpolateYlOrRd)
+      .domain(colorScaleDomain);
+
+    // Update title with animation
+    svg.select("text").transition().duration(500).text(chartTitle);
+
+    // Draw cells with animation
+    const cells = svg
+      .append("g")
+      .attr("class", "heatmap-cells")
+      .selectAll("rect.cell")
+      .data(processedData)
+      .enter()
+      .append("rect")
+      .attr("class", "cell")
+      .attr("x", (d) => xScale(d.hour)!)
+      .attr("y", (d) => yScale(d.day as ActivityData["day"])!)
+      .attr("width", xScale.bandwidth())
+      .attr("height", yScale.bandwidth())
+      .attr("fill", (d) =>
+        currentDataType === "time" ? colorScale(d.count) : colorScale(d.value!)
+      )
+      .attr("opacity", 0);
+
+    // Animate cells appearance
+    gsap.to(".cell", {
+      opacity: 1,
+      duration: 0.5,
+      stagger: {
+        from: "random",
+        amount: 0.7,
+      },
+    });
+
+    // Tooltip and mouseover handlers
+    cells
+      .on("mouseover", (event, d) => {
+        const cellElement = event.currentTarget;
+        d3.select(cellElement).raise();
+
+        gsap.to(cellElement, {
+          scale: 1.15,
+          strokeWidth: 1.5,
+          stroke: "#333",
+          duration: 0.2,
+          ease: "power2.out",
+          overwrite: true,
+          transformOrigin: "50% 50%",
+        });
+
+        // Customize tooltip based on data type
+        let tooltipContent;
+        if (currentDataType === "time") {
+          const sample =
+            d.records[Math.floor(Math.random() * d.records.length)];
+          tooltipContent = `
+          <strong>${d.count} runs</strong><br/>
+          ${d.day} @ ${d.hour}:00<br/>
+          Example: ${sample.name}
+        `;
+        } else {
+          const totalMiles = d.records.reduce(
+            (sum, rec) => sum + (rec.miles || 0),
+            0
+          );
+          const avgMiles =
+            d.records.length > 0 ? totalMiles / d.records.length : 0;
+          tooltipContent = `
+          <strong>${avgMiles.toFixed(2)} avg miles</strong><br/>
+          ${d.day} @ ${d.hour}:00<br/>
+          ${d.count} runs total
+        `;
+        }
+
+        tooltip.html(tooltipContent);
+
+        const tooltipNode = tooltip.node();
+        if (!tooltipNode) return;
+        const ttWidth = tooltipNode.offsetWidth;
+        const ttHeight = tooltipNode.offsetHeight;
+        const [mx, my] = d3.pointer(event, container.node());
+
+        gsap.to(tooltip.node(), {
+          duration: 0.2,
+          opacity: 1,
+          left: `${mx - ttWidth / 2}px`,
+          top: `${my - ttHeight - 10}px`,
+          overwrite: true,
+        });
+      })
+      .on("mousemove", (event) => {
+        const [mx, my] = d3.pointer(event, container.node());
+        const tooltipNode = tooltip.node();
+        if (!tooltipNode) return;
+        const ttWidth = tooltipNode.offsetWidth;
+        const ttHeight = tooltipNode.offsetHeight;
+        gsap.set(tooltip.node(), {
+          left: `${mx - ttWidth / 2}px`,
+          top: `${my - ttHeight - 10}px`,
+        });
+      })
+      .on("mouseout", (event) => {
+        const cellElement = event.currentTarget;
+
+        gsap.to(cellElement, {
+          scale: 1,
+          strokeWidth: 0.5,
+          stroke: "#fff",
+          duration: 0.2,
+          ease: "power2.out",
+          overwrite: true,
+        });
+
+        gsap.to(tooltip.node(), {
+          duration: 0.2,
+          opacity: 0,
+          overwrite: true,
+        });
+      });
+  }
   const days: ActivityData["day"][] = [
     "Mon",
     "Tue",
@@ -102,6 +350,7 @@
     hour: number;
     count: number;
     records: ActivityData[];
+    value?: number;
   };
   const bins: Bin[] = [];
   for (const [day, hourMap] of nested) {
