@@ -7,10 +7,12 @@ import cloudflare from '@astrojs/cloudflare';
 
 import tailwindcss from '@tailwindcss/vite';
 
+import alpinejs from '@astrojs/alpinejs';
+
 // https://astro.build/config
 export default defineConfig({
   site: 'https://hexdev.blog/',
-  integrations: [mdx(), sitemap()],
+  integrations: [mdx(), sitemap(), alpinejs()],
 
   adapter: cloudflare({
     platformProxy: {

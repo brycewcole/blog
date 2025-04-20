@@ -1,0 +1,271 @@
+<style>
+  #d3-chart {
+    position: relative;
+    font-family: sans-serif; /* Consider changing to a sportier font */
+  }
+
+  .cell {
+    stroke: #fff;
+    stroke-width: 0.5px; /* Slightly thinner stroke */
+    cursor: pointer;
+    /* GSAP will handle transform-origin */
+  }
+  /* Remove the default :hover style as GSAP handles it */
+  /* .cell:hover { ... } */
+
+  .axis path,
+  .axis line {
+    stroke: none;
+  }
+  .axis text {
+    fill: #444;
+    font-size: 12px;
+  }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(0, 0, 0, 0.85); /* Slightly darker tooltip */
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1.3;
+    opacity: 0;
+  }
+</style>
+
+<div id="d3-chart"></div>
+
+<script>
+  import * as d3 from "d3";
+  import { gsap } from "gsap";
+
+  interface ActivityData {
+    day: "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun";
+    hour: number;
+    name: string;
+  }
+
+  // Dimensions
+  const width = 720;
+  const height = 400;
+  const margin = { top: 60, right: 30, bottom: 50, left: 80 };
+  const days: ActivityData["day"][] = [
+    "Mon",
+    "Tue",
+    "Wed",
+    "Thu",
+    "Fri",
+    "Sat",
+    "Sun",
+  ];
+
+  // Scales
+  const xScale = d3
+    .scaleBand<number>()
+    .domain(d3.range(0, 24))
+    .range([margin.left, width - margin.right])
+    .paddingInner(0.05);
+
+  const yScale = d3
+    .scaleBand<ActivityData["day"]>()
+    .domain(days)
+    .range([margin.top, height - margin.bottom])
+    .paddingInner(0.05);
+
+  // Container & SVG
+  const container = d3.select("#d3-chart");
+  const svg = container
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  // Tooltip
+  const tooltip = container.append("div").attr("class", "tooltip");
+
+  // Load & aggregate data
+  const data: ActivityData[] = await fetch("/activities.json").then((r) => {
+    if (!r.ok) throw new Error(`Failed to load: ${r.status}`);
+    return r.json();
+  });
+
+  const nested = d3.rollup(
+    data,
+    (v) => v,
+    (d) => d.day,
+    (d) => d.hour
+  );
+
+  type Bin = {
+    day: string;
+    hour: number;
+    count: number;
+    records: ActivityData[];
+  };
+  const bins: Bin[] = [];
+  for (const [day, hourMap] of nested) {
+    for (const [hour, recs] of hourMap) {
+      bins.push({ day, hour, count: recs.length, records: recs });
+    }
+  }
+
+  const maxCount = d3.max(bins, (d) => d.count)!;
+  const colorScale = d3
+    .scaleSequential(d3.interpolateYlOrRd)
+    .domain([0, maxCount * 1.1]);
+
+  // Title
+  svg
+    .append("text")
+    .attr("x", width / 2)
+    .attr("y", margin.top / 2)
+    .attr("text-anchor", "middle")
+    .style("font-size", "20px")
+    .style("fill", "#333")
+    .text("Running Activity Heatmap");
+
+  // X Axis
+  const xAxis = d3
+    .axisBottom(xScale)
+    .tickValues([0, 4, 8, 12, 16, 20, 23] as any)
+    .tickFormat((d) => `${d}:00`)
+    .tickSize(0);
+
+  svg
+    .append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(0,${height - margin.bottom})`)
+    .call(xAxis)
+    .selectAll("text")
+    .attr("dy", "1.2em");
+
+  svg
+    .append("text")
+    .attr("x", width / 2)
+    .attr("y", height - 10)
+    .attr("text-anchor", "middle")
+    .style("fill", "#444")
+    .text("Hour of Day");
+
+  // Y Axis
+  const yAxis = d3.axisLeft(yScale).tickSize(0);
+  svg
+    .append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(${margin.left},0)`)
+    .call(yAxis);
+
+  svg
+    .append("text")
+    .attr("transform", "rotate(-90)")
+    .attr("x", -height / 2)
+    .attr("y", 20)
+    .attr("text-anchor", "middle")
+    .style("fill", "#444")
+    .text("Day of Week");
+
+  // Gridlines
+  svg
+    .append("g")
+    .attr("class", "grid")
+    .selectAll("line")
+    .data(days)
+    .enter()
+    .append("line")
+    .attr("x1", margin.left)
+    .attr("x2", width - margin.right)
+    .attr("y1", (d) => yScale(d)!)
+    .attr("y2", (d) => yScale(d)!)
+    .attr("stroke", "#eee");
+
+  // Draw cells
+  const cells = svg
+    .append("g") // Append cells to a group
+    .attr("class", "heatmap-cells")
+    .selectAll("rect.cell")
+    .data(bins)
+    .enter()
+    .append("rect")
+    .attr("class", "cell")
+    .attr("x", (d) => xScale(d.hour)!)
+    .attr("y", (d) => yScale(d.day as any)!)
+    .attr("width", xScale.bandwidth())
+    .attr("height", yScale.bandwidth())
+    .attr("fill", (d) => colorScale(d.count))
+    .attr("opacity", 1);
+
+  // Tooltip and Mouseover Animation
+  cells
+    .on("mouseover", (event, d) => {
+      const cellElement = event.currentTarget as SVGRectElement;
+
+      // --- Bring cell to front ---
+      d3.select(cellElement).raise();
+      // --- End bring to front ---
+
+      // Animate the Cell
+      gsap.to(cellElement, {
+        scale: 1.15,
+        strokeWidth: 1.5,
+        stroke: "#333",
+        duration: 0.2,
+        ease: "power2.out",
+        overwrite: true,
+        transformOrigin: "50% 50%",
+      });
+
+      // Tooltip Logic
+      const sample = d.records[Math.floor(Math.random() * d.records.length)];
+      tooltip.html(
+        `
+          <strong>${d.count} runs</strong><br/>
+          ${d.day} @ ${d.hour}:00<br/>
+          Example: ${sample.name}
+        `
+      );
+      const tooltipNode = tooltip.node() as HTMLElement;
+      const ttWidth = tooltipNode.offsetWidth;
+      const ttHeight = tooltipNode.offsetHeight;
+      const [mx, my] = d3.pointer(event, container.node());
+      gsap.to(tooltip.node(), {
+        duration: 0.2,
+        opacity: 1,
+        left: `${mx - ttWidth / 2}px`,
+        top: `${my - ttHeight - 10}px`,
+        overwrite: true,
+      });
+    })
+    .on("mousemove", (event) => {
+      // Only update tooltip position
+      const [mx, my] = d3.pointer(event, container.node());
+      const tooltipNode = tooltip.node() as HTMLElement;
+      const ttWidth = tooltipNode.offsetWidth;
+      const ttHeight = tooltipNode.offsetHeight;
+      gsap.set(tooltip.node(), {
+        left: `${mx - ttWidth / 2}px`,
+        top: `${my - ttHeight - 10}px`,
+      });
+    })
+    .on("mouseout", (event) => {
+      const cellElement = event.currentTarget as SVGRectElement;
+
+      // Animate Cell Back
+      gsap.to(cellElement, {
+        scale: 1,
+        strokeWidth: 0.5,
+        stroke: "#fff",
+        duration: 0.2,
+        ease: "power2.out",
+        overwrite: true,
+        // No need to lower it, the next raised element will cover it
+      });
+
+      // Hide Tooltip
+      gsap.to(tooltip.node(), {
+        duration: 0.2,
+        opacity: 0,
+        overwrite: true,
+      });
+    });
+</script>
