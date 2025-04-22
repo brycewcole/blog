@@ -1,0 +1,157 @@
+---
+// src/components/RunHeatmap.astro
+// No server-side props needed
+---
+
+<div id="mapid-routes"></div>
+{/* Changed ID slightly to avoid potential conflicts */}
+
+<style>
+  /* Import Leaflet CSS */
+  @import "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+  #mapid-routes {
+    height: 500px; /* Adjust height as needed */
+    width: 100%;
+    z-index: 0;
+  }
+</style>
+
+<script>
+  import L from "leaflet";
+
+  // --- Configuration ---
+  const MAP_CENTER = [40.7128, -74.006]; // Adjust!
+  const INITIAL_ZOOM = 10; // Adjust!
+  const ROUTES_DATA_URL = "/activity_routes.json";
+
+  // Polyline Style Options - Consider adjusting color for dark background!
+  const polylineOptions = {
+    // Brighter colors often work better on dark maps
+    color: "#FF5733", // Example: A bright orange/red
+    // color: "#00FFFF", // Example: Cyan
+    // color: "#FAFA33", // Example: Neon Yellow
+    weight: 2,
+    opacity: 0.2, // Increased opacity slightly might look good too
+  };
+
+  // --- Tile Layer Configuration (NEW) ---
+  const darkTileUrl =
+    "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+  const darkTileAttribution =
+    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+  // --- Alternative: Stadia Maps Dark (Requires API Key) ---
+  // const stadiaDarkTileUrl = 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png?api_key=YOUR_STADIA_API_KEY';
+  // const stadiaAttribution = '&copy; <a href="https://www.stadiamaps.com/" target="_blank">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/" target="_blank">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors';
+  // To use Stadia:
+  // 1. Sign up for a free API key at stadiamaps.com
+  // 2. Uncomment the two lines above.
+  // 3. Replace YOUR_STADIA_API_KEY with your actual key.
+  // 4. Use stadiaDarkTileUrl and stadiaAttribution in L.tileLayer below instead of darkTileUrl/darkTileAttribution.
+  // --- End Alternatives ---
+
+  // --- End Configuration ---
+
+  function initMap() {
+    const mapElement = document.getElementById("mapid-routes");
+    if (!mapElement || mapElement.classList.contains("leaflet-container")) {
+      // Don't re-initialize or proceed if element missing
+      return;
+    }
+
+    console.log("Initializing Leaflet map with dark theme...");
+
+    const map = L.map("mapid-routes").setView(MAP_CENTER, INITIAL_ZOOM);
+
+    // --- Use the Dark Tile Layer ---
+    L.tileLayer(darkTileUrl, {
+      // Use the CARTO URL
+      attribution: darkTileAttribution, // Use the CARTO attribution
+      maxZoom: 20, // CARTO maxZoom is typically high
+      subdomains: "abcd", // Standard subdomains for CARTO
+    }).addTo(map);
+    // --- End Tile Layer Change ---
+
+    fetch(ROUTES_DATA_URL)
+      .then((response) => {
+        if (!response.ok)
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        return response.json();
+      })
+      .then((activities) => {
+        if (!Array.isArray(activities)) throw new Error("Invalid data format");
+        console.log(`Loaded ${activities.length} activity routes.`);
+
+        if (activities.length > 0) {
+          const routeGroup = L.featureGroup().addTo(map);
+          activities.forEach((routeCoords, index) => {
+            if (Array.isArray(routeCoords) && routeCoords.length >= 2) {
+              try {
+                const polyline = L.polyline(routeCoords, polylineOptions);
+                routeGroup.addLayer(polyline);
+              } catch (e) {
+                console.warn(
+                  `Could not create polyline for route index ${index}:`,
+                  e
+                );
+              }
+            } else {
+              console.warn(`Skipping invalid route data at index ${index}.`);
+            }
+          });
+
+          console.log("Route polylines added.");
+
+          if (routeGroup.getLayers().length > 0) {
+            try {
+              map.fitBounds(routeGroup.getBounds().pad(0.1));
+            } catch (e) {
+              console.error("Could not fit map bounds:", e);
+              if (activities[0]?.[0]) {
+                // Optional chaining
+                map.setView(activities[0][0], INITIAL_ZOOM);
+              }
+            }
+          } else {
+            console.warn("No valid polylines added. Cannot fit bounds.");
+          }
+        } else {
+          console.warn("Route data is empty.");
+        }
+      })
+      .catch((error) => {
+        console.error("Error loading or processing route data:", error);
+        mapElement.innerHTML = `<p style="color: red; padding: 1em;">Could not load route data. Check console.</p>`;
+      });
+  }
+
+  // --- Initialization Logic (Intersection Observer) ---
+  const mapContainer = document.getElementById("mapid-routes");
+  if (mapContainer) {
+    const observer = new IntersectionObserver(
+      (entries, obs) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            initMap();
+            obs.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(mapContainer);
+  } else {
+    console.error("Map container #mapid-routes not found.");
+  }
+</script>
+
+<style>
+  #mapid-routes {
+    height: 500px;
+    width: 100%;
+    z-index: 0;
+    /* Optional: Add a background color while tiles load */
+    background-color: #222;
+  }
+  @import "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+</style>
