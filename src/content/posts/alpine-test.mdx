@@ -1,10 +1,25 @@
 ---
-title: "Alpine test"
-description: "Testing Alpine.js"
-pubDate: "Feb 16 2025"
-heroImage: "/anyOfHero.png"
+title: "Analyzing 9 years of Strava data using LLM's"
+description: ""
+pubDate: "Apr 21 2025"
+heroImage: "/strava-data-hero-image.png"
 ---
 import ChartTest from '../../components/ChartTest.astro';
+import NameChart from '../../components/NameChart.astro';
+import MapTest from '../../components/MapTest.astro';
+import vibeCodingMeme from '../../vibe-coding-meme.png';
+import { Image } from 'astro:assets';
 
-<ChartTest client:load />
-foo
+My favorite project in college was a statistic class where I generated some fancy plots of my Strava data. While the information and trends were relatively insightful, the presentation of the data was painfully boring. That was close to four years ago, I thought this would be a fun excuse to sharpen my ***vibe coding*** skills. Vibe coding is the practice of using large language models like OpenAI's 4o model, or Anthropic's 3.7 Sonnet to write code. The twist is that you detach yourself from the underlying code created, never checking what the model actually writes, just whether the result looks good. Forfeit control of the system and give into the vibes.
+
+While it's interesting in theory, vibe coding projects for my day job or even side projects that I care about would be deeply irresponsible. LLM generated code is improving at a fantastic pace but it is still prone to hallucination and error. Greenfield projects written purely in vibes also tend to suffer from organization issues, with large amounts of code hacked on top of each other in order to get a result desired by the user, with little thought given to future expansion. 
+
+<Image src={vibeCodingMeme} alt="A bird sitting on a nest of eggs." />
+
+## Deeply engrained schedules
+
+<ChartTest client:visible />
+
+## The real Kudos are the friends we made along the way
+Arguably the best part about running is the people. Often when you run with someone Strava will group your runs together on the app, however it looks like they didnt expose this information in my data dump. To try and get a good 
+<NameChart client:visible />

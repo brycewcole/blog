@@ -1,0 +1,455 @@
+<style>
+  #name-chart-container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    width: 100%;
+  }
+
+  #name-chart {
+    position: relative;
+    font-family: sans-serif;
+    width: 100%;
+    height: 550px;
+    background: #f9f9f9;
+    border-radius: 8px;
+  }
+
+  .chart-title {
+    text-align: center;
+    margin-bottom: 5px;
+    font-size: 24px;
+    font-weight: bold;
+    color: #333;
+  }
+
+  .chart-subtitle {
+    text-align: center;
+    margin-bottom: 20px;
+    font-size: 16px;
+    color: #666;
+  }
+
+  .name-bubble {
+    cursor: pointer;
+    transition: stroke-width 0.2s;
+  }
+
+  .bubble-label {
+    font-family: sans-serif;
+    text-anchor: middle;
+    pointer-events: none;
+    font-weight: 500;
+    dominant-baseline: middle;
+  }
+
+  .name-label {
+    font-size: 14px;
+    font-weight: bold;
+  }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    padding: 12px 15px;
+    border-radius: 4px;
+    font-size: 14px;
+    line-height: 1.4;
+    max-width: 300px;
+    opacity: 0;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    z-index: 10;
+  }
+</style>
+
+<div id="name-chart-container">
+  <div id="name-chart"></div>
+</div>
+
+<script>
+  import * as d3 from "d3";
+  import { gsap } from "gsap";
+
+  // Extended interface to include d3 force simulation properties
+  interface NameData extends d3.SimulationNodeDatum {
+    name: string;
+    count: number;
+    activities: string[];
+    // d3 simulation properties already included via SimulationNodeDatum
+  }
+
+  // Create the visualization container
+  const container = d3.select("#name-chart");
+
+  // Create tooltip
+  const tooltip = d3
+    .select("#name-chart-container")
+    .append("div")
+    .attr("class", "tooltip")
+    .style("opacity", 0);
+
+  // Get container dimensions - ensure proper type casting
+  const containerNode = container.node() as HTMLElement;
+  if (!containerNode) throw new Error("Container not found");
+  const width = containerNode.getBoundingClientRect().width;
+  const height = containerNode.getBoundingClientRect().height;
+
+  // Create SVG
+  const svg = container
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", [0, 0, width, height]);
+
+  // Load data
+  async function loadData() {
+    const rawData = await fetch("/strava_names_occurrences.json").then((r) =>
+      r.json()
+    );
+    // Fixed type cast for Object.entries
+    const processedData: NameData[] = Object.entries(
+      rawData as Record<string, string[]>
+    ).map(([name, activities]) => ({
+      name,
+      count: activities.length,
+      activities: activities,
+    }));
+
+    // Sort data by count (descending)
+    processedData.sort((a, b) => b.count - a.count);
+
+    // Add initial positions closer to the center
+    const centerX = width / 2;
+    const centerY = height / 2;
+    // Start with a much tighter grouping
+    const radius = Math.min(width, height) * 0.1; // Even tighter initial grouping
+
+    processedData.forEach((d, i) => {
+      // Distribute in a compact spiral pattern
+      const angle = 0.3 * i; // Tighter spiral
+      const spiralRadius = (radius * i) / (processedData.length * 3) + 5;
+      d.x = centerX + spiralRadius * Math.cos(angle);
+      d.y = centerY + spiralRadius * Math.sin(angle);
+    });
+
+    createBubbleChart(processedData);
+  }
+
+  // Global reference to the simulation for use in interactions
+  let globalSimulation: d3.Simulation<NameData, undefined>;
+
+  function createBubbleChart(data: NameData[]) {
+    // Create a color scale (all shades of orange)
+    const orangeShades = [
+      "#FFA726",
+      "#FF9800",
+      "#FB8C00",
+      "#F57C00",
+      "#EF6C00",
+      "#FFB74D",
+      "#FFD180",
+      "#FFE0B2",
+      "#FFCC80",
+      "#FFAB40",
+    ];
+    const colorScale = d3
+      .scaleOrdinal<string>()
+      .domain(data.map((d) => d.name))
+      .range(orangeShades);
+
+    // Create a size scale
+    const sizeScale = d3
+      .scaleSqrt()
+      .domain([0, d3.max(data, (d) => d.count) || 10])
+      .range([20, 80]); // Slightly smaller max size
+
+    // Create bubble group
+    const bubbleGroup = svg.append("g").attr("class", "bubbles");
+
+    // Create the bubbles with initial positions
+    const bubbles = bubbleGroup
+      .selectAll(".bubble")
+      .data(data)
+      .enter()
+      .append("g")
+      .attr("class", "bubble-group")
+      .attr(
+        "transform",
+        (d) => `translate(${d.x || width / 2}, ${d.y || height / 2})`
+      );
+
+    // Add the circle elements with proper type conversion
+    bubbles
+      .append("circle")
+      .attr("class", "name-bubble")
+      .attr("r", (d) => sizeScale(d.count))
+      .attr("fill", (d, i) => {
+        const color = d3.color(colorScale(d.name))?.brighter(0.2);
+        return color ? color.toString() : "#FFA726";
+      })
+      .attr("fill-opacity", 0.85)
+      .attr("stroke", (d, i) => colorScale(d.name))
+      .attr("stroke-width", 2)
+      .attr("data-name", (d) => d.name);
+
+    // Add name labels (centered)
+    bubbles
+      .append("text")
+      .attr("class", "bubble-label name-label")
+      .text((d) => d.name)
+      .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "middle")
+      .attr("x", 0)
+      .attr("y", 0)
+      .style("font-size", (d) => {
+        const size = Math.min(16, Math.max(10, sizeScale(d.count) * 0.2));
+        return `${size}px`;
+      });
+
+    // Simulation setup with stronger gravity towards center
+    const simulation = d3
+      .forceSimulation<NameData>()
+      .nodes(data)
+      // Add stronger center gravity
+      .force(
+        "center",
+        d3.forceCenter(width / 2, height / 2).strength(0.3) // Much stronger gravity (0.15 -> 0.3)
+      )
+      // Add stronger radial force to pull toward center
+      .force(
+        "radial",
+        d3.forceRadial(0, width / 2, height / 2).strength(0.08) // Stronger radial force (0.03 -> 0.08)
+      )
+      // Reduced charge repulsion
+      .force(
+        "charge",
+        d3
+          .forceManyBody<NameData>()
+          .strength((d) => -Math.pow(sizeScale(d.count), 1.1)) // Slightly reduced repulsion
+      )
+      // Keep collision detection
+      .force(
+        "collide",
+        d3
+          .forceCollide<NameData>()
+          .radius((d) => sizeScale(d.count) + 2)
+          .strength(0.8) // Increased collision strength
+          .iterations(4)
+      )
+      .velocityDecay(0.4) // Higher damping to reduce oscillation
+      .alphaTarget(0)
+      .alphaDecay(0.02) // Slower decay for more natural movement
+      .on("tick", ticked);
+
+    // Store reference to simulation
+    globalSimulation = simulation;
+
+    // Animate bubbles appearing
+    gsap.fromTo(
+      ".name-bubble",
+      { scale: 0, opacity: 0 },
+      {
+        scale: 1,
+        opacity: 1,
+        duration: 1,
+        ease: "elastic.out(1, 0.5)",
+        stagger: {
+          from: "random",
+          amount: 0.8,
+        },
+      }
+    );
+
+    // Animate labels appearing
+    gsap.fromTo(
+      ".bubble-label",
+      { opacity: 0, scale: 0 },
+      {
+        opacity: 1,
+        scale: 1,
+        duration: 0.5,
+        delay: 0.8,
+        stagger: {
+          from: "random",
+          amount: 0.5,
+        },
+      }
+    );
+
+    // Add interactions - fix the jump on hover bug
+    bubbles
+      .on("mouseover", function (event, d) {
+        const node = d3.select(this);
+
+        // Bring to front first before any animation to prevent jumps
+        node.raise();
+
+        // Highlight bubble - without changing size or position
+        node
+          .select(".name-bubble")
+          .transition()
+          .duration(200)
+          .attr("stroke-width", 3)
+          .attr("fill-opacity", 1);
+
+        // Scale up with GSAP - scale around exact center to prevent jump
+        gsap.to(node.select(".name-bubble").node(), {
+          scale: 1.08,
+          duration: 0.3,
+          ease: "power2.out",
+          transformOrigin: "center center",
+        });
+
+        // Scale up text separately instead of whole group to prevent jumps
+        gsap.to(node.select(".bubble-label").node(), {
+          scale: 1.08,
+          duration: 0.3,
+          ease: "power2.out",
+          transformOrigin: "center center",
+        });
+
+        // Physics effect: Milder repulsion increase - avoid position changes
+        if (globalSimulation) {
+          // Apply a gentler repulsive force with proper typing
+          globalSimulation.force(
+            "charge",
+            d3
+              .forceManyBody<NameData>()
+              .strength((n) =>
+                n === d
+                  ? -Math.pow(sizeScale(d.count) * 1.5, 1.1)
+                  : -Math.pow(sizeScale(n.count), 1.1)
+              )
+          );
+
+          // Temporarily increase this bubble's importance in the simulation
+          // Use minimal alpha to prevent sudden jumps
+          globalSimulation.alpha(0.05).restart();
+        }
+
+        // Build tooltip content
+        const sampleActivities = d.activities.slice(0, 5);
+        let tooltipContent = `
+        <strong>${d.name}</strong><br/>
+        <span style="color: #eee">${d.count} runs together</span><br/>
+        <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.2); margin: 8px 0"/>
+        <small style="color: #ddd">Recent activities:</small><br/>
+      `;
+
+        sampleActivities.forEach((act) => {
+          tooltipContent += `<span style="font-size: 12px">• ${act}</span><br/>`;
+        });
+
+        if (d.activities.length > 5) {
+          tooltipContent += `<span style="font-size: 12px; color: #aaa">+ ${
+            d.activities.length - 5
+          } more...</span>`;
+        }
+
+        // Position and show tooltip
+        tooltip.html(tooltipContent);
+
+        const tooltipNode = tooltip.node() as HTMLElement;
+        if (!tooltipNode) return;
+
+        const ttWidth = tooltipNode.offsetWidth;
+        const ttHeight = tooltipNode.offsetHeight;
+        const [mx, my] = d3.pointer(
+          event,
+          d3.select("#name-chart-container").node()
+        );
+
+        gsap.to(tooltip.node(), {
+          duration: 0.2,
+          opacity: 1,
+          left: `${mx - ttWidth / 2}px`,
+          top: `${my - ttHeight - 10}px`,
+          overwrite: true,
+        });
+      })
+      .on("mousemove", function (event) {
+        const tooltipNode = tooltip.node() as HTMLElement;
+        if (!tooltipNode) return;
+
+        const ttWidth = tooltipNode.offsetWidth;
+        const ttHeight = tooltipNode.offsetHeight;
+        const [mx, my] = d3.pointer(
+          event,
+          d3.select("#name-chart-container").node()
+        );
+
+        gsap.set(tooltip.node(), {
+          left: `${mx - ttWidth / 2}px`,
+          top: `${my - ttHeight - 10}px`,
+        });
+      })
+      .on("mouseout", function (event, d) {
+        const node = d3.select(this);
+
+        // Return bubble to normal
+        node
+          .select(".name-bubble")
+          .transition()
+          .duration(200)
+          .attr("stroke-width", 2)
+          .attr("fill-opacity", 0.85);
+
+        // Scale back with GSAP - separate scaling for circle and text
+        gsap.to(node.select(".name-bubble").node(), {
+          scale: 1,
+          duration: 0.3,
+          ease: "power2.out",
+        });
+
+        gsap.to(node.select(".bubble-label").node(), {
+          scale: 1,
+          duration: 0.3,
+          ease: "power2.out",
+        });
+
+        // Restore original forces
+        if (globalSimulation) {
+          // Restore original forces with proper typing
+          globalSimulation.force(
+            "charge",
+            d3
+              .forceManyBody<NameData>()
+              .strength((n) => -Math.pow(sizeScale(n.count), 1.1))
+          );
+
+          // Very subtle reheat
+          globalSimulation.alpha(0.05).restart();
+        }
+
+        // Hide tooltip
+        gsap.to(tooltip.node(), {
+          duration: 0.2,
+          opacity: 0,
+          overwrite: true,
+        });
+      });
+
+    // Tick function for force simulation
+    function ticked() {
+      bubbles.attr("transform", (d) => {
+        // Clamp positions to stay within bounds with a bit of padding
+        const padding = 10;
+        d.x = Math.max(
+          sizeScale(d.count) + padding,
+          Math.min(width - sizeScale(d.count) - padding, d.x || width / 2)
+        );
+        d.y = Math.max(
+          sizeScale(d.count) + padding,
+          Math.min(height - sizeScale(d.count) - padding, d.y || height / 2)
+        );
+        return `translate(${d.x}, ${d.y})`;
+      });
+    }
+  }
+
+  // Load and render data
+  loadData();
+</script>
