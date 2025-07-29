@@ -1,0 +1,29 @@
+---
+title: Personal software in the age of LLM's
+description: Reflections on the joy of software built for one end-user (you)
+pubDate: "Jul 28 2025"
+heroImage: '/personalSoftwareHeader.jpg'
+---
+
+import CenteredImage from '../../components/CenteredImage.astro';
+
+I often find myself running into small problems that detract from the day-to-day routine of my life. Being a software engineer, my first thought often is, “How could I automate this repetitive task?” However, writing software, even when it seems simple in the beginning, can quickly consume every waking second as you chuck your responsibilities aside in the pursuit of beautiful code only you will read. I think about this comic from xkcd at least once a week.
+<CenteredImage 
+  src="https://imgs.xkcd.com/comics/automation_2x.png" 
+  alt="xkcd #1319" 
+  width={400}
+  caption="Comic by Randall Munroe, via xkcd.com/1319"
+/>
+# Enter Vibe Coding
+Vibe coding enables a new era of personal software for a few key reasons. The most obvious is that building greenfield apps is just so much faster now. A competent engineer _could_ implement pretty much any small-scale personal software product given enough time, but they most likely wouldn’t be able to implement _all_ their fun ideas and keep up with a full-time job + real life. Vibe coding lets you create real working apps in hours, which gives you the freedom to fail and throw everything away if the end product doesn’t solve the use case you were hoping it does. For me personally, it also helps with the perfectionism I get from writing code. It doesn’t matter if the code is a little sloppy, I often feel detached from the code output and more aligned to my prompts and the final result almost like I’m a product owner. It bends the reality panel of the xkcd to look closer to the theory.
+
+# My project
+As someone trying to take running more seriously, a big factor is your weekly mileage. The best way to get faster is often to increase your total miles a week, but running too much is also a great way to get injured. Keeping track of your mileage in a glanceable dashboard seemed perfect. I had purchased a [trmnl](https://usetrmnl.com/) a while back, but it mostly sat unused in the drawer. It’s basically an e-ink screen similar to a Kindle, but can display HTML-rendered pages, auto-refreshing on a set timer. It seemed like a perfect solution to my mile monitoring needs. I’ve been tracking my runs on Strava for almost a decade now, but recent changes to their API made me hesitant to dive fully in. Instead, I wanted something I controlled more closely and opted for Apple Health, which gives me the added benefit of adding things in the future like sleep, alcohol, or other health metrics.
+
+The backend is a pretty classic little serverless setup. API Gateway sits in front of two Lambda functions: one for ingestion and one for serving the dashboard. Everything writes to and reads from S3, and it’s all fast, cheap, and probably way more robust than it needs to be for a one-person health tracker.
+
+Health data gets exported from my iPhone using Auto Health Export, which runs daily and creates a JSON file of everything new since the last sync. That file gets POSTed to my API, where it’s stored for processing. On the other end, my TRMNL display hits the dashboard API on a timer, gets the latest snapshot with my weekly mileage, and shows it as a clean, glanceable readout on the e-ink screen. Nothing fancy, just a steady little loop that works.
+
+Honestly, it’s kind of overkill. But it’s also pretty fun having a full ingest-and-query pipeline just to watch my weekly mileage tick up on a little E Ink screen. The best part? I got to focus on the high-level architecture and the overall look and feel, while my vibe coding tool of choice (Claude Code) handled the rest.
+
+I think the future of programming is bright. It’s a future where software continuously adapts to meet users’ needs. If the barrier to building a new product is just a $20 subscription and a free weekend, hopefully users will have little tolerance for low-quality or malicious software.
