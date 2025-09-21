@@ -1,0 +1,918 @@
+---
+
+---
+
+<section class="solver">
+  <div class="solver__intro">
+    <h2>Interactive Strands Solver</h2>
+    <p>
+      Paste the daily grid, lean on the built-in dictionary, then search for
+      words by exploring every path with depth-first search. Candidate theme
+      words and potential spangrams are listed below, and you can optionally
+      nudge an LLM to focus on the most thematic results by providing an API
+      key.
+    </p>
+  </div>
+  <form class="solver__form" id="solver-form">
+    <fieldset>
+      <legend>Grid</legend>
+      <label class="solver__label" for="theme-clue">Theme clue</label>
+      <input
+        id="theme-clue"
+        name="theme"
+        type="text"
+        placeholder="e.g. Sweet treats"
+      />
+      <label class="solver__label" for="grid-input">8 rows x 6 columns</label>
+      <textarea
+        id="grid-input"
+        name="grid"
+        rows="8"
+        spellcheck="false"
+        placeholder="Enter 8 lines, 6 letters each"></textarea>
+      <small class="solver__hint"
+        >Letters are uppercased automatically; spaces and punctuation are
+        ignored.</small
+      >
+    </fieldset>
+
+    <div class="solver__options">
+      <label class="solver__label" for="min-length">Minimum helper length</label
+      >
+      <input
+        id="min-length"
+        name="minLength"
+        type="number"
+        min="3"
+        max="12"
+        value="4"
+      />
+      <p class="solver__note" id="dictionary-status">Loading dictionary...</p>
+    </div>
+
+    <div class="solver__actions">
+      <button type="submit" data-action="solve">Find candidates</button>
+      <button type="button" data-action="reset" class="secondary">Reset</button>
+    </div>
+    <p class="solver__status" id="solver-status" role="status"></p>
+  </form>
+
+  <section class="solver__results">
+    <div class="solver__panel">
+      <h3>Theme Candidates</h3>
+      <p class="solver__summary" id="theme-summary">
+        Run the solver to see matches.
+      </p>
+      <div class="solver__list-wrapper">
+        <ol id="theme-results" class="solver__list"></ol>
+      </div>
+    </div>
+    <div class="solver__panel">
+      <h3>Spangram Candidates</h3>
+      <p class="solver__summary" id="spangram-summary">
+        Waiting for solver output.
+      </p>
+      <div class="solver__list-wrapper">
+        <ol id="spangram-results" class="solver__list"></ol>
+      </div>
+    </div>
+    <div class="solver__panel">
+      <h3>Helper Word Pool</h3>
+      <p class="solver__summary" id="nontheme-summary">
+        Helper words at or above your chosen length threshold will appear here.
+      </p>
+      <div class="solver__list-wrapper">
+        <ol id="nontheme-results" class="solver__list"></ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="solver__llm">
+    <h3>LLM Filter (optional)</h3>
+    <p>
+      Bring your own API key to summarize or filter the candidates. Calls are
+      sent directly from your browser; the key is never stored.
+    </p>
+    <label class="solver__label" for="api-key">API key</label>
+    <input id="api-key" name="apiKey" type="password" autocomplete="off" />
+    <p class="solver__hint">Using gpt-5-mini via OpenAI Chat Completions.</p>
+    <div class="solver__actions">
+      <button type="button" data-action="llm" class="accent">Call LLM</button>
+      <div class="solver__spinner" id="llm-spinner" hidden></div>
+    </div>
+    <pre class="solver__llm-output" id="llm-output" aria-live="polite" hidden>
+    </pre>
+  </section>
+  <div
+    class="solver__dialog"
+    id="solver-dialog"
+    role="alertdialog"
+    aria-modal="true"
+    aria-labelledby="solver-dialog-message"
+    hidden
+    tabindex="-1"
+  >
+    <div class="solver__dialog-content">
+      <p id="solver-dialog-message"></p>
+      <button
+        type="button"
+        data-action="dialog-close"
+        class="solver__dialog-close">OK</button
+      >
+    </div>
+  </div>
+</section>
+
+<style>
+  .solver {
+    display: flex;
+    flex-direction: column;
+    gap: 2.5rem;
+  }
+  .solver__intro h2 {
+    margin-bottom: 0.5rem;
+    text-align: center;
+  }
+  .solver__form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  fieldset {
+    border: 1px solid rgba(var(--black), 0.1);
+    border-radius: 12px;
+    padding: 1.5rem;
+  }
+  legend {
+    padding: 0 0.5rem;
+    font-weight: 600;
+  }
+  .solver__label {
+    display: block;
+    margin-bottom: 0.25rem;
+    font-weight: 600;
+  }
+  textarea,
+  input[type="text"],
+  input[type="number"],
+  input[type="password"] {
+    width: 100%;
+    padding: 0.75rem;
+    border-radius: 8px;
+    border: 1px solid rgba(var(--black), 0.2);
+    font-family: inherit;
+    font-size: 1rem;
+    resize: vertical;
+    box-sizing: border-box;
+  }
+  textarea {
+    min-height: 6rem;
+  }
+  .solver__hint {
+    display: block;
+    margin-top: 0.5rem;
+    color: rgb(var(--gray));
+  }
+  .solver__note {
+    margin: 0 0 1rem;
+    color: rgb(var(--gray));
+  }
+  .solver__options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+  .solver__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .solver__spinner {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 3px solid rgba(35, 55, 255, 0.2);
+    border-top-color: var(--accent);
+    animation: solver-spin 0.8s linear infinite;
+    align-self: center;
+  }
+  @keyframes solver-spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .solver__dialog {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 18, 25, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    z-index: 9999;
+  }
+  .solver__dialog[hidden] {
+    display: none;
+  }
+  .solver__dialog-content {
+    background: #fff;
+    border-radius: 12px;
+    padding: 1.5rem;
+    max-width: 420px;
+    width: min(90vw, 420px);
+    box-shadow: var(--box-shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .solver__dialog-content p {
+    margin: 0;
+    color: rgb(var(--gray-dark));
+    line-height: 1.4;
+  }
+  .solver__dialog-close {
+    align-self: flex-end;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 0.5rem 1.25rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button {
+    appearance: none;
+    border: none;
+    border-radius: 999px;
+    padding: 0.75rem 1.5rem;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.1s ease;
+  }
+  button:hover:enabled {
+    transform: translateY(-1px);
+  }
+  button:disabled {
+    opacity: 0.6;
+    cursor: progress;
+  }
+  button.secondary {
+    background: rgba(35, 55, 255, 0.12);
+    color: rgb(var(--gray-dark));
+  }
+  button.accent {
+    background: var(--accent);
+  }
+  .solver__status {
+    min-height: 1.25rem;
+    margin: 0;
+    color: rgb(var(--gray-dark));
+  }
+  .solver__results {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.5rem;
+  }
+  .solver__panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    height: 100%;
+  }
+  .solver__list-wrapper {
+    max-height: 260px;
+    overflow-y: auto;
+    border-radius: 10px;
+    border: 1px solid rgba(var(--black), 0.08);
+    padding: 0.5rem;
+    background: rgba(35, 55, 255, 0.04);
+  }
+  .solver__list {
+    margin: 0;
+    padding-left: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .solver__list li {
+    background: rgba(35, 55, 255, 0.08);
+    border-radius: 10px;
+    padding: 0.5rem 0.75rem;
+    line-height: 1.3;
+  }
+  .solver__summary {
+    margin-top: 0;
+    color: rgb(var(--gray));
+  }
+  .solver__llm {
+    border: 1px solid rgba(var(--black), 0.1);
+    border-radius: 12px;
+    padding: 1.5rem;
+  }
+  .solver__llm-output {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: rgba(35, 55, 255, 0.08);
+    color: rgb(var(--gray-dark));
+    border-radius: 10px;
+    min-height: 0;
+    white-space: pre-wrap;
+    overflow: auto;
+  }
+  @media (max-width: 720px) {
+    .solver__form {
+      gap: 1rem;
+    }
+    fieldset {
+      padding: 1rem;
+    }
+    button {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+</style>
+
+<script type="module">
+  const GRID_ROWS = 8;
+  const GRID_COLS = 6;
+  const solverForm = document.getElementById("solver-form");
+  const gridInput = document.getElementById("grid-input");
+  const minLengthInput = document.getElementById("min-length");
+  const themeInput = document.getElementById("theme-clue");
+  const statusEl = document.getElementById("solver-status");
+  const themeResultsEl = document.getElementById("theme-results");
+  const themeSummaryEl = document.getElementById("theme-summary");
+  const spangramResultsEl = document.getElementById("spangram-results");
+  const spangramSummaryEl = document.getElementById("spangram-summary");
+  const nonThemeResultsEl = document.getElementById("nontheme-results");
+  const nonThemeSummaryEl = document.getElementById("nontheme-summary");
+  const apiKeyInput = document.getElementById("api-key");
+  const llmOutput = document.getElementById("llm-output");
+  const llmSpinner = document.getElementById("llm-spinner");
+  const dialogEl = document.getElementById("solver-dialog");
+  const dialogMessageEl = document.getElementById("solver-dialog-message");
+  const dialogCloseBtn = dialogEl?.querySelector(
+    '[data-action="dialog-close"]',
+  );
+  if (llmOutput) {
+    llmOutput.hidden = true;
+  }
+  if (llmSpinner) {
+    llmSpinner.hidden = true;
+  }
+  const actionButtons = Array.from(
+    document.querySelectorAll("[data-action]"),
+  ).filter((btn) => btn instanceof HTMLButtonElement);
+  const resetButton = solverForm?.querySelector('[data-action="reset"]');
+  const llmButton = document.querySelector('[data-action="llm"]');
+  const dictionaryStatusEl = document.getElementById("dictionary-status");
+  const DICTIONARY_URL = "/assets/words.txt";
+  const LLM_MODEL = "gpt-5-mini";
+  let dictionaryCache = [];
+  let dictionaryLongest = 0;
+  let dictionaryLoaded = false;
+  let dictionaryLoadError = null;
+  let dictionaryPromise = null;
+  let dictionarySkipped = 0;
+  let lastFocusedElement = null;
+  const defaultGrid = [
+    "S T R A N D",
+    "P U Z Z L E",
+    "M O C H A T",
+    "S W E E T S",
+    "B R O W N I",
+    "C A R A M E",
+    "F R O S T Y",
+    "C A N D Y S",
+  ].join("\n");
+  const state = {
+    words: [],
+    spangrams: [],
+    nonTheme: [],
+    grid: [],
+    dictionarySize: 0,
+    longestWord: 0,
+  };
+
+  if (gridInput && !gridInput.value.trim()) {
+    gridInput.value = defaultGrid;
+  }
+  function sanitizeWord(raw) {
+    return raw.replace(/[^A-Z]/gi, "").toUpperCase();
+  }
+
+  function parseDictionary(raw) {
+    const lines = raw.split(/\r?\n/);
+    const set = new Set();
+    let longest = 0;
+    let skipped = 0;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (!/^[A-Za-z]+$/.test(trimmed)) {
+        skipped += 1;
+        continue;
+      }
+      const word = trimmed.toUpperCase();
+      if (word.length < 3) {
+        skipped += 1;
+        continue;
+      }
+      set.add(word);
+      if (word.length > longest) longest = word.length;
+    }
+    return { words: Array.from(set), longest, skipped };
+  }
+
+  async function ensureDictionary() {
+    if (dictionaryLoaded) {
+      return {
+        words: dictionaryCache,
+        longest: dictionaryLongest,
+        skipped: dictionarySkipped,
+      };
+    }
+    if (!dictionaryPromise) {
+      dictionaryLoadError = null;
+      dictionaryPromise = (async () => {
+        if (dictionaryStatusEl) {
+          dictionaryStatusEl.textContent = "Loading dictionary...";
+        }
+        const response = await fetch(DICTIONARY_URL);
+        if (!response.ok) {
+          throw new Error(`Failed to load dictionary (${response.status}).`);
+        }
+        const text = await response.text();
+        const { words, longest, skipped } = parseDictionary(text);
+        if (!words.length) {
+          throw new Error("Dictionary file is empty after cleaning.");
+        }
+        dictionaryCache = words;
+        dictionaryLongest = longest;
+        dictionaryLoaded = true;
+        dictionaryLoadError = null;
+        dictionarySkipped = skipped;
+        if (dictionaryStatusEl) {
+          dictionaryStatusEl.textContent = skipped
+            ? `Loaded ${words.length} words from built-in list (skipped ${skipped}).`
+            : `Loaded ${words.length} words from built-in list.`;
+        }
+        return { words, longest, skipped };
+      })().catch((error) => {
+        const err = error instanceof Error ? error : new Error(String(error));
+        dictionaryLoadError = err;
+        dictionaryLoaded = false;
+        dictionaryCache = [];
+        dictionaryLongest = 0;
+        dictionaryPromise = null;
+        dictionarySkipped = 0;
+        if (dictionaryStatusEl) {
+          dictionaryStatusEl.textContent = err.message;
+        }
+        throw err;
+      });
+    }
+    return dictionaryPromise;
+  }
+
+  ensureDictionary().catch((error) => {
+    console.error("Dictionary preload failed", error);
+  });
+
+  function showDialog(message) {
+    lastFocusedElement =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    if (dialogMessageEl) {
+      dialogMessageEl.textContent = message;
+    }
+    if (dialogEl) {
+      dialogEl.hidden = false;
+      dialogEl.focus({ preventScroll: true });
+    }
+    if (dialogCloseBtn) {
+      dialogCloseBtn.focus();
+    }
+  }
+
+  function hideDialog() {
+    if (dialogEl && !dialogEl.hidden) {
+      dialogEl.hidden = true;
+      if (lastFocusedElement instanceof HTMLElement) {
+        lastFocusedElement.focus({ preventScroll: true });
+      }
+      lastFocusedElement = null;
+    }
+  }
+
+  dialogCloseBtn?.addEventListener("click", () => hideDialog());
+  dialogEl?.addEventListener("click", (event) => {
+    if (event.target === dialogEl) {
+      hideDialog();
+    }
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && dialogEl && !dialogEl.hidden) {
+      hideDialog();
+    }
+  });
+
+  function parseGrid(raw) {
+    const lines = raw
+      .split(/\r?\n/)
+      .map((line) => sanitizeWord(line))
+      .filter(Boolean);
+    if (lines.length !== GRID_ROWS) {
+      throw new Error(`Expected ${GRID_ROWS} rows, received ${lines.length}.`);
+    }
+    for (const line of lines) {
+      if (line.length !== GRID_COLS) {
+        throw new Error(
+          `Each row must contain ${GRID_COLS} letters. Problem row: ${line}`,
+        );
+      }
+    }
+    return lines;
+  }
+
+  function buildNeighbors(rows, cols) {
+    const directions = [-1, 0, 1];
+    const total = rows * cols;
+    const neighbors = Array.from({ length: total }, () => []);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const index = r * cols + c;
+        for (const dr of directions) {
+          for (const dc of directions) {
+            if (dr === 0 && dc === 0) continue;
+            const nr = r + dr;
+            const nc = c + dc;
+            if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+            neighbors[index].push(nr * cols + nc);
+          }
+        }
+      }
+    }
+    return neighbors;
+  }
+
+  function createTrie(words) {
+    const root = { children: new Map(), terminal: false, word: null };
+    for (const word of words) {
+      let node = root;
+      for (const letter of word) {
+        if (!node.children.has(letter)) {
+          node.children.set(letter, {
+            children: new Map(),
+            terminal: false,
+            word: null,
+          });
+        }
+        node = node.children.get(letter);
+      }
+      node.terminal = true;
+      node.word = word;
+    }
+    return root;
+  }
+
+  function indexToCoord(index, cols) {
+    const row = Math.floor(index / cols);
+    const col = index % cols;
+    return { row, col };
+  }
+
+  function coordLabel({ row, col }) {
+    return `${String.fromCharCode(65 + row)}${col + 1}`;
+  }
+
+  function analyzeEdges(path, rows, cols) {
+    let touchesTop = false;
+    let touchesBottom = false;
+    let touchesLeft = false;
+    let touchesRight = false;
+    for (const step of path) {
+      if (step.row === 0) touchesTop = true;
+      if (step.row === rows - 1) touchesBottom = true;
+      if (step.col === 0) touchesLeft = true;
+      if (step.col === cols - 1) touchesRight = true;
+    }
+    return {
+      touchesTop,
+      touchesBottom,
+      touchesLeft,
+      touchesRight,
+      crossesHorizontal: touchesLeft && touchesRight,
+      crossesVertical: touchesTop && touchesBottom,
+    };
+  }
+
+  function solver(grid, dictionary, longestWord) {
+    const rows = grid.length;
+    const cols = grid[0].length;
+    const letters = grid.join("");
+    const neighbors = buildNeighbors(rows, cols);
+    const trie = createTrie(dictionary);
+    const visited = new Array(rows * cols).fill(false);
+    const found = new Map();
+
+    function dfs(index, node, path) {
+      const coord = indexToCoord(index, cols);
+      const letter = letters[index];
+      const nextNode = node.children.get(letter);
+      if (!nextNode) {
+        return;
+      }
+      const nextPath = path.concat(coord);
+      if (nextNode.terminal) {
+        const edges = analyzeEdges(nextPath, rows, cols);
+        const entry = found.get(nextNode.word);
+        if (!entry) {
+          found.set(nextNode.word, {
+            word: nextNode.word,
+            paths: [nextPath],
+            edges: [edges],
+          });
+        } else if (entry.paths.length < 5) {
+          entry.paths.push(nextPath);
+          entry.edges.push(edges);
+        }
+      }
+      if (nextPath.length >= longestWord) {
+        return;
+      }
+      visited[index] = true;
+      for (const neighbor of neighbors[index]) {
+        if (!visited[neighbor]) {
+          dfs(neighbor, nextNode, nextPath);
+        }
+      }
+      visited[index] = false;
+    }
+
+    for (let index = 0; index < letters.length; index++) {
+      dfs(index, trie, []);
+    }
+
+    const words = Array.from(found.values()).map((entry) => {
+      const bestIndex = entry.edges.findIndex(
+        (edge) => edge.crossesHorizontal || edge.crossesVertical,
+      );
+      const bestPath = entry.paths[bestIndex !== -1 ? bestIndex : 0];
+      const edges = entry.edges[bestIndex !== -1 ? bestIndex : 0];
+      return {
+        word: entry.word,
+        path: bestPath,
+        edges,
+        length: entry.word.length,
+        coversOppositeSides: edges.crossesHorizontal || edges.crossesVertical,
+      };
+    });
+
+    words.sort((a, b) => b.length - a.length || a.word.localeCompare(b.word));
+
+    return words;
+  }
+
+  function renderList(target, entries) {
+    target.innerHTML = "";
+    const fragment = document.createDocumentFragment();
+    entries.forEach((entry) => {
+      const li = document.createElement("li");
+      const path = entry.path.map(coordLabel).join(" -> ");
+      li.innerHTML = `<strong>${entry.word}</strong> <span>(${entry.length})</span><br /><small>${path}</small>`;
+      fragment.appendChild(li);
+    });
+    target.appendChild(fragment);
+  }
+
+  function setStatus(message, isError = false) {
+    if (!statusEl) return;
+    statusEl.textContent = message;
+    statusEl.style.color = isError ? "#b71c1c" : "inherit";
+  }
+
+  function withBusyState(fn) {
+    return async (event) => {
+      if (event) {
+        event.preventDefault();
+      }
+      actionButtons.forEach((btn) => (btn.disabled = true));
+      try {
+        await fn();
+      } finally {
+        actionButtons.forEach((btn) => (btn.disabled = false));
+      }
+    };
+  }
+
+  async function handleSolve() {
+    try {
+      setStatus("Solving...");
+      const grid = parseGrid(gridInput.value);
+      const { words, longest } = await ensureDictionary();
+      if (!words.length) {
+        throw new Error("Dictionary is empty after cleaning.");
+      }
+      const helperThreshold = Number(minLengthInput.value) || 4;
+      const themeThreshold = Math.max(helperThreshold + 1, 5);
+      const candidates = solver(grid, words, longest);
+      const spangrams = candidates.filter((entry) => entry.coversOppositeSides);
+      const themeCandidates = candidates.filter(
+        (entry) => !entry.coversOppositeSides && entry.length >= themeThreshold,
+      );
+      const helperWords = candidates.filter(
+        (entry) =>
+          !entry.coversOppositeSides &&
+          entry.length >= helperThreshold &&
+          entry.length < themeThreshold,
+      );
+
+      state.words = themeCandidates;
+      state.spangrams = spangrams;
+      state.nonTheme = helperWords;
+      state.grid = grid;
+      state.dictionarySize = words.length;
+      state.longestWord = longest;
+
+      themeSummaryEl.textContent = themeCandidates.length
+        ? `${themeCandidates.length} candidate${themeCandidates.length === 1 ? "" : "s"} (length >= ${themeThreshold}).`
+        : `No theme-length candidates yet (need length >= ${themeThreshold}).`;
+      spangramSummaryEl.textContent = spangrams.length
+        ? `${spangrams.length} path${spangrams.length === 1 ? "" : "s"} cross the board.`
+        : "No spangrams detected yet.";
+      nonThemeSummaryEl.textContent = helperWords.length
+        ? `${helperWords.length} helper word${helperWords.length === 1 ? "" : "s"} (>= ${helperThreshold} and < ${themeThreshold}).`
+        : `No helper words found for lengths >= ${helperThreshold} and < ${themeThreshold}.`;
+
+      renderList(themeResultsEl, themeCandidates);
+      renderList(spangramResultsEl, spangrams);
+      renderList(nonThemeResultsEl, helperWords);
+
+      setStatus(
+        `Checked ${words.length} dictionary entries, longest word length ${longest}.`,
+      );
+    } catch (error) {
+      console.error(error);
+      setStatus(error instanceof Error ? error.message : "Unknown error", true);
+    }
+  }
+
+  function handleReset() {
+    gridInput.value = defaultGrid;
+    themeInput.value = "";
+    minLengthInput.value = "4";
+    state.words = [];
+    state.spangrams = [];
+    state.nonTheme = [];
+    themeResultsEl.innerHTML = "";
+    spangramResultsEl.innerHTML = "";
+    nonThemeResultsEl.innerHTML = "";
+    themeSummaryEl.textContent = "Run the solver to see matches.";
+    spangramSummaryEl.textContent = "Waiting for solver output.";
+    nonThemeSummaryEl.textContent =
+      "Helper words at or above your chosen length threshold will appear here.";
+    if (dictionaryStatusEl) {
+      if (dictionaryLoaded) {
+        dictionaryStatusEl.textContent = dictionarySkipped
+          ? `Loaded ${dictionaryCache.length} words from built-in list (skipped ${dictionarySkipped}).`
+          : `Loaded ${dictionaryCache.length} words from built-in list.`;
+      } else if (dictionaryLoadError) {
+        dictionaryStatusEl.textContent = dictionaryLoadError.message;
+      } else {
+        dictionaryStatusEl.textContent = "Loading dictionary...";
+      }
+    }
+    setStatus("");
+    if (llmOutput) {
+      llmOutput.textContent = "";
+      llmOutput.hidden = true;
+    }
+    if (llmSpinner) {
+      llmSpinner.hidden = true;
+    }
+    hideDialog();
+  }
+
+  async function callLLM() {
+    const hasCandidates =
+      state.words.length > 0 ||
+      state.spangrams.length > 0 ||
+      state.nonTheme.length > 0;
+    if (!hasCandidates) {
+      setStatus("Run the solver before calling the LLM.", true);
+      showDialog(
+        "Solve the grid first so we have candidates to send to the LLM.",
+      );
+      return;
+    }
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) {
+      setStatus("Please paste an API key first.", true);
+      showDialog("Paste a valid API key before calling the LLM.");
+      return;
+    }
+    const theme = themeInput.value.trim();
+
+    const payload = {
+      model: LLM_MODEL,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are helping solve the NYT Strands puzzle. Classify the provided candidate words." +
+            " Focus on highlighting theme words and the most plausible spangram based on the clue.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify(
+            {
+              themeClue: theme,
+              grid: state.grid,
+              themeCandidates: state.words.map((w) => w.word),
+              spangramCandidates: state.spangrams.map((w) => w.word),
+              helperWords: state.nonTheme.map((w) => w.word),
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+
+    try {
+      setStatus("Contacting the LLM...");
+      console.log("[StrandsSolver] Calling LLM", {
+        model: LLM_MODEL,
+        themeCandidates: state.words.length,
+        spangramCandidates: state.spangrams.length,
+        helperCandidates: state.nonTheme.length,
+      });
+      if (llmOutput) {
+        llmOutput.hidden = false;
+        llmOutput.textContent = "Waiting for response...";
+      }
+      if (llmSpinner) {
+        llmSpinner.hidden = false;
+      }
+      const response = await fetch(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(
+          err.error?.message || `OpenAI error ${response.status}`,
+        );
+      }
+      const data = await response.json();
+      const text = data.choices?.[0]?.message?.content?.trim();
+      if (!text) {
+        throw new Error("No content returned by the model.");
+      }
+      if (llmOutput) {
+        llmOutput.hidden = false;
+        llmOutput.textContent = text;
+      }
+      setStatus("LLM response ready.");
+      if (llmSpinner) {
+        llmSpinner.hidden = true;
+      }
+      showDialog("LLM response ready. Check the output panel for details.");
+    } catch (error) {
+      console.error(error);
+      const message =
+        error instanceof Error ? error.message : "Failed to call LLM";
+      const dialogMessage = `LLM call failed: ${message}`;
+      if (llmOutput) {
+        llmOutput.hidden = false;
+        llmOutput.textContent = message;
+      }
+      setStatus(dialogMessage, true);
+      if (llmSpinner) {
+        llmSpinner.hidden = true;
+      }
+      showDialog(dialogMessage);
+    }
+  }
+
+  solverForm?.addEventListener("submit", withBusyState(handleSolve));
+  resetButton?.addEventListener("click", withBusyState(handleReset));
+  llmButton?.addEventListener("click", withBusyState(callLLM));
+</script>
